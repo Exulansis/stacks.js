@@ -11,11 +11,13 @@ import {
   hash160,
   makeRandomPrivKey,
   makeUnsignedContractCall,
-  privateKeyToString,
+  noneCV,
   ResponseErrorCV,
+  privateKeyToString,
   StacksTransaction,
   standardPrincipalCV,
   UnsignedContractCallOptions,
+  someCV
 } from '@stacks/transactions';
 
 import { StacksNetwork } from '@stacks/network';
@@ -151,7 +153,7 @@ export async function canRegisterName({
     }
   });
 }
-
+ 
 /**
  * Get namespace price options
  *
@@ -674,15 +676,17 @@ export async function buildTransferNameTx({
     throw new Error('Cannot transfer a subdomain using transferName()');
   }
 
-  const functionArgs = [
+  const functionArgs: ClarityValue[] = [
     bufferCVFromString(namespace),
     bufferCVFromString(name),
-    bufferCVFromString(newOwnerAddress),
+    standardPrincipalCV(newOwnerAddress)
   ];
 
-  if (zonefile) {
-    functionArgs.push(bufferCV(getZonefileHash(zonefile)));
-  }
+  const newZonefile = zonefile
+    ? someCV(bufferCV(getZonefileHash(zonefile)))
+    : noneCV()
+
+  functionArgs.push(newZonefile)
 
   return makeBnsContractCall({
     functionName: bnsFunctionName,
@@ -780,20 +784,21 @@ export async function buildRenewNameTx({
     throw new Error('Cannot renew a subdomain using renewName()');
   }
 
-  const functionArgs = [
+  const newOwner = newOwnerAddress
+    ? someCV(standardPrincipalCV(newOwnerAddress))
+    : noneCV()
+
+  const newZonefile = zonefile
+    ? someCV(bufferCV(getZonefileHash(zonefile)))
+    : noneCV()
+
+  const functionArgs: ClarityValue[] = [
     bufferCVFromString(namespace),
     bufferCVFromString(name),
     uintCVFromBN(stxToBurn),
+    newOwner,
+    newZonefile
   ];
-
-  if (newOwnerAddress) {
-    functionArgs.push(bufferCVFromString(newOwnerAddress));
-  }
-
-  if (zonefile) {
-    const zonefileHash = getZonefileHash(zonefile);
-    functionArgs.push(bufferCV(zonefileHash));
-  }
 
   return makeBnsContractCall({
     functionName: bnsFunctionName,
