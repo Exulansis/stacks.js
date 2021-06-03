@@ -1,6 +1,5 @@
 import { Buffer } from '@stacks/common';
 import {
-  AnchorMode,
   bufferCV,
   callReadOnlyFunction,
   ClarityType,
@@ -17,7 +16,18 @@ import {
   StacksTransaction,
   standardPrincipalCV,
   UnsignedContractCallOptions,
-  someCV
+  someCV,
+  AddressVersion,
+  createSTXPostCondition,
+  publicKeyToAddress,
+  createStacksPublicKey,
+  FungibleConditionCode,
+  parseAssetInfoString,
+  NonFungibleConditionCode,
+  createNonFungiblePostCondition,
+  tupleCV,
+  PostCondition,
+  AnchorMode
 } from '@stacks/transactions';
 
 import { StacksNetwork } from '@stacks/network';
@@ -29,7 +39,6 @@ import BN from 'bn.js';
 import { ChainID } from '@stacks/common';
 
 export const BNS_CONTRACT_NAME = 'bns';
-
 export const enum BnsContractAddress {
   mainnet = 'SP000000000000000000002Q6VF78',
   testnet = 'ST000000000000000000002AMW42H',
@@ -70,6 +79,7 @@ export interface BnsContractCallOptions {
   publicKey: string;
   network: StacksNetwork;
   attachment?: Buffer;
+  postConditions?: PostCondition[]
 }
 
 async function makeBnsContractCall(options: BnsContractCallOptions): Promise<StacksTransaction> {
@@ -81,7 +91,8 @@ async function makeBnsContractCall(options: BnsContractCallOptions): Promise<Sta
     publicKey: options.publicKey,
     validateWithAbi: false,
     network: options.network,
-    anchorMode: AnchorMode.Any,
+    postConditions: options.postConditions,
+    anchorMode: AnchorMode.Any
   };
 
   return makeUnsignedContractCall(txOptions);
@@ -153,7 +164,7 @@ export async function canRegisterName({
     }
   });
 }
- 
+
 /**
  * Get namespace price options
  *
@@ -295,14 +306,26 @@ export async function buildPreorderNamespaceTx({
   network,
 }: PreorderNamespaceOptions): Promise<StacksTransaction> {
   const bnsFunctionName = 'namespace-preorder';
+
   const saltedNamespaceBuffer = Buffer.from(`${namespace}${salt}`);
   const hashedSaltedNamespace = hash160(saltedNamespaceBuffer);
+
+  const addrVersion = network.chainId === ChainID.Mainnet
+    ? AddressVersion.MainnetSingleSig
+    : AddressVersion.TestnetSingleSig
+
+  const burnPostCondition = createSTXPostCondition(
+    publicKeyToAddress(addrVersion, createStacksPublicKey(publicKey)),
+    FungibleConditionCode.Equal,
+    stxToBurn
+  )
 
   return makeBnsContractCall({
     functionName: bnsFunctionName,
     functionArgs: [bufferCV(hashedSaltedNamespace), uintCVFromBN(stxToBurn)],
     publicKey,
     network,
+    postConditions: [burnPostCondition]
   });
 }
 
@@ -518,11 +541,22 @@ export async function buildPreorderNameTx({
   const saltedNamesBuffer = Buffer.from(`${fullyQualifiedName}${salt}`);
   const hashedSaltedName = hash160(saltedNamesBuffer);
 
+  const addrVersion = network.chainId === ChainID.Mainnet
+    ? AddressVersion.MainnetSingleSig
+    : AddressVersion.TestnetSingleSig
+
+  const burnPostCondition = createSTXPostCondition(
+    publicKeyToAddress(addrVersion, createStacksPublicKey(publicKey)),
+    FungibleConditionCode.Equal,
+    stxToBurn
+  )
+
   return makeBnsContractCall({
     functionName: bnsFunctionName,
     functionArgs: [bufferCV(hashedSaltedName), uintCVFromBN(stxToBurn)],
     publicKey,
     network,
+    postConditions: [burnPostCondition]
   });
 }
 
@@ -688,12 +722,38 @@ export async function buildTransferNameTx({
 
   functionArgs.push(newZonefile)
 
+  const addrVersion = network.chainId === ChainID.Mainnet
+    ? AddressVersion.MainnetSingleSig
+    : AddressVersion.TestnetSingleSig
+
+  const nameTransferPostCondition1 = createNonFungiblePostCondition(
+    publicKeyToAddress(addrVersion, createStacksPublicKey(publicKey)),
+    NonFungibleConditionCode.DoesNotOwn,
+    parseAssetInfoString(`${getBnsContractAddress(network)}.bns::names`),
+    tupleCV({
+      name: bufferCVFromString(name),
+      namespace: bufferCVFromString(namespace)
+    })
+  )
+
+  const nameTransferPostCondition2 = createNonFungiblePostCondition(
+    newOwnerAddress,
+    NonFungibleConditionCode.Owns,
+    parseAssetInfoString(`${getBnsContractAddress(network)}.bns::names`),
+    tupleCV({
+      name: bufferCVFromString(name),
+      namespace: bufferCVFromString(namespace)
+    })
+  )
+
+
   return makeBnsContractCall({
     functionName: bnsFunctionName,
     functionArgs,
     publicKey,
     network,
     attachment: zonefile ? Buffer.from(zonefile) : undefined,
+    postConditions: [nameTransferPostCondition1, nameTransferPostCondition2]
   });
 }
 
@@ -800,11 +860,23 @@ export async function buildRenewNameTx({
     newZonefile
   ];
 
+  const addrVersion = network.chainId === ChainID.Mainnet
+    ? AddressVersion.MainnetSingleSig
+    : AddressVersion.TestnetSingleSig
+
+  const burnPostCondition = createSTXPostCondition(
+    publicKeyToAddress(addrVersion, createStacksPublicKey(publicKey)),
+    FungibleConditionCode.Equal,
+    stxToBurn
+  )
+
   return makeBnsContractCall({
     functionName: bnsFunctionName,
     functionArgs,
     publicKey,
     network,
     attachment: zonefile ? Buffer.from(zonefile) : undefined,
+    postConditions: [burnPostCondition]
+
   });
 }
