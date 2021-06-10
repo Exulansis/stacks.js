@@ -736,24 +736,13 @@ export async function buildTransferNameTx({
     })
   )
 
-  const nameTransferPostCondition2 = createNonFungiblePostCondition(
-    newOwnerAddress,
-    NonFungibleConditionCode.Owns,
-    parseAssetInfoString(`${getBnsContractAddress(network)}.bns::names`),
-    tupleCV({
-      name: bufferCVFromString(name),
-      namespace: bufferCVFromString(namespace)
-    })
-  )
-
-
   return makeBnsContractCall({
     functionName: bnsFunctionName,
     functionArgs,
     publicKey,
     network,
     attachment: zonefile ? Buffer.from(zonefile) : undefined,
-    postConditions: [nameTransferPostCondition1, nameTransferPostCondition2]
+    postConditions: [nameTransferPostCondition1]
   });
 }
 
